@@ -19,7 +19,8 @@
 #ifndef DIGIO_H_INCLUDED
 #define DIGIO_H_INCLUDED
 
-#include <libopencm3/stm32/gpio.h>
+// #include <libopencm3/stm32/gpio.h>
+#include "hal.h"
 #include "digio_prj.h"
 
 namespace PinMode {
@@ -54,32 +55,37 @@ public:
    * @param[in] io pin index
    * @return pin value
    */
-   bool Get() { return gpio_get(_port, _pin) > 0; }
+   // bool Get() { return gpio_get(_port, _pin) > 0; }
+   bool Get() { return palReadPad(PAL_PORT(_line), PAL_PAD(_line)) > 0; }
 
    /**
    * Set pin high
    *
    * @param[in] io pin index
    */
-   void Set() { gpio_set(_port, _pin); }
+   // void Set() { gpio_set(_port, _pin); }
+   void Set() { palSetPad(PAL_PORT(_line), PAL_PAD(_line)); }
 
    /**
    * Set pin low
    *
    * @param[in] io pin index
    */
-   void Clear() { gpio_clear(_port, _pin); }
+   // void Clear() { gpio_clear(_port, _pin); }
+   void Clear() { palClearPad(PAL_PORT(_line), PAL_PAD(_line)); }
 
    /**
    * Toggle pin
    *
    * @param[in] io pin index
    */
-   void Toggle() { gpio_toggle(_port, _pin); }
+   // void Toggle() { gpio_toggle(_port, _pin); }
+   void Toggle() { palTogglePad(PAL_PORT(_line), PAL_PAD(_line)); }
 
 private:
    uint32_t _port;
-   uint16_t _pin;
+   uint32_t _pin;
+   uint32_t _line = PAL_LINE(_port, _pin);
 };
 //Configure all digio objects from the given list
 #define DIG_IO_ENTRY(name, port, pin, mode) DigIo::name.Configure(port, pin, mode);
