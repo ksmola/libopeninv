@@ -17,8 +17,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <libopencm3/stm32/flash.h>
-#include <libopencm3/stm32/crc.h>
+// #include <libopencm3/stm32/flash.h>
+// #include <libopencm3/stm32/crc.h>
+#include "hal.h"
 #include "params.h"
 #include "param_save.h"
 #include "hwdefs.h"
@@ -26,6 +27,78 @@
 
 #define NUM_PARAMS ((PARAM_BLKSIZE - 8) / sizeof(PARAM_ENTRY))
 #define PARAM_WORDS (PARAM_BLKSIZE / 4)
+
+#define FlashWaitWhileBusy() { while (FLASH->SR & FLASH_SR_BSY) {} }
+#define FlashLock() { FLASH->CR |= FLASH_CR_LOCK; }
+
+uint32_t gCrc = 0;
+
+void crc_callback(CRCDriver *crcp, uint32_t crc) {
+  (void)crcp;
+  gCrc = crc;
+}
+
+/*
+ * CRC32 configuration
+ */
+static const CRCConfig crc32_config = {
+  .poly_size         = 32,
+  .poly              = 0x04C11DB7,
+  .initial_val       = 0xFFFFFFFF,
+  .final_val         = 0xFFFFFFFF,
+  .reflect_data      = 1,
+  .reflect_remainder = 1
+};
+
+#if CRC_USE_DMA == TRUE
+/*
+ * CRC32 configuration
+ */
+static const CRCConfig crc32_dma_config = {
+  .poly_size         = 32,
+  .poly              = 0x04C11DB7,
+  .initial_val       = 0xFFFFFFFF,
+  .final_val         = 0xFFFFFFFF,
+  .reflect_data      = 1,
+  .reflect_remainder = 1,
+  .end_cb = crc_callback
+};
+#endif
+
+/**
+ * @brief Unlock the flash memory for write access.
+ * @return HAL_SUCCESS  Unlock was successful.
+ * @return HAL_FAILED    Unlock failed.
+ */
+static bool FlashUnlock(void) {
+	/* Check if unlock is really needed */
+	if (!(FLASH->CR  & FLASH_CR_LOCK))
+		return HAL_SUCCESS;
+
+	/* Write magic unlock sequence */
+	FLASH->KEYR = 0x45670123;
+	FLASH->KEYR = 0xCDEF89AB;
+
+	/* Check if unlock was successful */
+	if (FLASH->CR  & FLASH_CR_LOCK)
+		return HAL_FAILED;
+	return HAL_SUCCESS;
+}
+
+int FlashErasePage(uintptr_t page_address) {
+
+   FlashWaitWhileBusy();
+
+	FLASH->CR |= FLASH_CR_PER;
+	FLASH->AR = page_address;
+	FLASH->CR |= FLASH_CR_STRT;
+
+	FlashWaitWhileBusy();
+
+	FLASH->CR  &= ~FLASH_CR_PER;
+
+	return HAL_SUCCESS;
+}
 
 typedef struct
 {
@@ -52,7 +125,9 @@ uint32_t parm_save()
    PARAM_PAGE parmPage;
    unsigned int idx;
 
-   crc_reset();
+   // crc_reset();
+   // crcAcquireUnit(&CRCD1);             /* Acquire ownership of the bus.    */
+   crcReset(&CRCD1);
    memset32((int*)&parmPage, 0xFFFFFFFF, PARAM_WORDS);
 
    //Copy parameter values and keys to block structure
@@ -64,17 +139,19 @@ uint32_t parm_save()
       parmPage.data[idx].value = Param::Get((Param::PARAM_NUM)idx);
    }
 
-   parmPage.crc = crc_calculate_block(((uint32_t*)&parmPage), (2 * NUM_PARAMS));
-   flash_unlock();
-   flash_erase_page(PARAM_ADDRESS);
+   // parmPage.crc = crc_calculate_block(((uint32_t*)&parmPage), (2 * NUM_PARAMS));
+   parmPage.crc = crcCalc(&CRCD1, sizeof(parmPage), &parmPage);
+   FlashUnlock();
+   FlashErasePage(PARAM_ADDRESS);
 
    for (idx = 0; idx < PARAM_WORDS; idx++)
    {
       uint32_t* pData = ((uint32_t*)&parmPage) + idx;
-      flash_program_word(PARAM_ADDRESS + idx * sizeof(uint32_t), *pData);
+      // flash_program_word(PARAM_ADDRESS + idx * sizeof(uint32_t), *pData);
    }
-   flash_lock();
+   FlashLock();
    return parmPage.crc;
+   return 1;
 }
 
 /**
@@ -87,10 +164,15 @@ int parm_load()
 {
    PARAM_PAGE *parmPage = (PARAM_PAGE *)PARAM_ADDRESS;
 
-   crc_reset();
-   uint32_t crc = crc_calculate_block(((uint32_t*)parmPage), (2 * NUM_PARAMS));
+   crcAcquireUnit(&CRCD1);             /* Acquire ownership of the bus.    */
+   crcStart(&CRCD1, &crc32_config);
+   crcReset(&CRCD1);
+
+   // uint32_t crc = crc_calculate_block(((uint32_t*)parmPage), (2 * NUM_PARAMS));
+   uint32_t crc = crcCalc(&CRCD1, sizeof(parmPage), &parmPage);
 
    if (crc == parmPage->crc)
+   if (1)
    {
       for (unsigned int idxPage = 0; idxPage < NUM_PARAMS; idxPage++)
       {
