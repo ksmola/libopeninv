@@ -65,6 +65,23 @@ static const CRCConfig crc32_dma_config = {
 };
 #endif
 
+uint32_t crc_calculate(uint32_t data)
+{
+	CRC->DR = data;
+	return CRC->DR;
+}
+
+uint32_t crc_calculate_block(uint32_t *datap, int size)
+{
+	int i;
+
+	for (i = 0; i < size; i++) {
+		CRC->DR = datap[i];
+	}
+
+	return CRC->DR;
+}
+
 /**
  * @brief Unlock the flash memory for write access.
  * @return HAL_SUCCESS  Unlock was successful.
@@ -126,7 +143,7 @@ uint32_t parm_save()
    unsigned int idx;
 
    // crc_reset();
-   // crcAcquireUnit(&CRCD1);             /* Acquire ownership of the bus.    */
+   crcAcquireUnit(&CRCD1);
    crcReset(&CRCD1);
    memset32((int*)&parmPage, 0xFFFFFFFF, PARAM_WORDS);
 
@@ -139,14 +156,14 @@ uint32_t parm_save()
       parmPage.data[idx].value = Param::Get((Param::PARAM_NUM)idx);
    }
 
-   // parmPage.crc = crc_calculate_block(((uint32_t*)&parmPage), (2 * NUM_PARAMS));
-   parmPage.crc = crcCalc(&CRCD1, sizeof(parmPage), &parmPage);
+   parmPage.crc = crc_calculate_block(((uint32_t*)&parmPage), (2 * NUM_PARAMS));
+   // parmPage.crc = crcCalc(&CRCD1, sizeof(parmPage), &parmPage);
    FlashUnlock();
    FlashErasePage(PARAM_ADDRESS);
 
    for (idx = 0; idx < PARAM_WORDS; idx++)
    {
-      uint32_t* pData = ((uint32_t*)&parmPage) + idx;
+      // uint32_t* pData = ((uint32_t*)&parmPage) + idx;
       // flash_program_word(PARAM_ADDRESS + idx * sizeof(uint32_t), *pData);
    }
    FlashLock();
@@ -164,15 +181,17 @@ int parm_load()
 {
    PARAM_PAGE *parmPage = (PARAM_PAGE *)PARAM_ADDRESS;
 
-   crcAcquireUnit(&CRCD1);             /* Acquire ownership of the bus.    */
+   crcAcquireUnit(&CRCD1);
    crcStart(&CRCD1, &crc32_config);
    crcReset(&CRCD1);
 
-   // uint32_t crc = crc_calculate_block(((uint32_t*)parmPage), (2 * NUM_PARAMS));
-   uint32_t crc = crcCalc(&CRCD1, sizeof(parmPage), &parmPage);
+   // uint32_t crc = crcCalc(&CRCD1, sizeof(parmPage), &parmPage);
+   uint32_t crc = crc_calculate_block(((uint32_t*)parmPage), (2 * NUM_PARAMS)); // TODO use ChibiOS CRC
+
+   crcStop(&CRCD1);
+   crcReleaseUnit(&CRCD1);
 
    if (crc == parmPage->crc)
-   if (1)
    {
       for (unsigned int idxPage = 0; idxPage < NUM_PARAMS; idxPage++)
       {
