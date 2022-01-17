@@ -181,15 +181,15 @@ int parm_load()
 {
    PARAM_PAGE *parmPage = (PARAM_PAGE *)PARAM_ADDRESS;
 
-   crcAcquireUnit(&CRCD1);
-   crcStart(&CRCD1, &crc32_config);
-   crcReset(&CRCD1);
+   // crcAcquireUnit(&CRCD1);
+   // crcStart(&CRCD1, &crc32_config);
+   // crcReset(&CRCD1);
 
    // uint32_t crc = crcCalc(&CRCD1, sizeof(parmPage), &parmPage);
    uint32_t crc = crc_calculate_block(((uint32_t*)parmPage), (2 * NUM_PARAMS)); // TODO use ChibiOS CRC
 
-   crcStop(&CRCD1);
-   crcReleaseUnit(&CRCD1);
+   // crcStop(&CRCD1);
+   // crcReleaseUnit(&CRCD1);
 
    if (crc == parmPage->crc)
    {
